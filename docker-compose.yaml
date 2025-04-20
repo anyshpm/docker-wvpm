@@ -1,0 +1,104 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: always
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${REDIS_DATA}:/data
+      - ${REDIS_LOG}:/logs
+    healthcheck:
+      start_period: 5s
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: redis-server --port 6379 --appendonly yes
+
+  mysql:
+    image: mysql:8.4.4
+    restart: always
+    command:  --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --explicit_defaults_for_timestamp=true --lower_case_table_names=1
+    environment:
+      SQL_MODE: "STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+      MYSQL_RANDOM_ROOT_PASSWORD: true
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./数据库/2.7.3/初始化-mysql-2.7.3.sql:/docker-entrypoint-initdb.d/init.sql
+      - ${MYSQL_DATA}:/var/lib/mysql:rw
+    healthcheck:
+      start_period: 15s
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      timeout: 20s
+      retries: 10
+
+  zlm:
+    image: zlmediakit/zlmediakit:master
+    restart: always
+    environment:
+      TZ: ${TZ}
+      WVP_HOST: ${WVP_HOST}
+    #ports:
+    #  - ${STREAM_PORT}:${STREAM_PORT}/udp
+    #  - ${STREAM_PORT}:${STREAM_PORT}/tcp
+    #  - 3001:3001
+    volumes:
+      - ./zlm-config.ini:/opt/media/conf/config.ini:ro
+      - ${ZLM_RECORD}:/media/record:rw # 录像保存目录
+      - ${ZLM_LOG}/logs/media:/opt/media/log # 保存zlm日志
+    healthcheck:
+      start_period: 30s
+      test: [ "CMD", "curl", "-sS", "http://localhost" ]
+      timeout: 10s
+      retries: 10
+
+  wvp:
+    image: anysphm/wvpm:latest
+    restart: always
+    environment:
+      TZ: ${TZ}
+      SIP_DOMAIN: ${SIP_DOMAIN}
+      SIP_ID: ${SIP_ID}
+      SIP_PASSWORD: ${SIP_PASSWORD}
+      WVP_HOST: ${WVP_HOST}
+      SDP_IP: ${SDP_IP}
+      ZLM_HOST: ${ZLM_HOST}
+      ZLM_ID: ${ZLM_ID}
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+      STREAM_HOST: ${STREAM_HOST}
+      DRUID_USER: ${DRUID_USER}
+      DRUID_PASS: ${DRUID_PASS}
+      JT1078_PORT: ${JT1078_PORT}
+      JT1078_PASS: ${JT1078_PASS}
+    ports:
+      - 5060:5060
+      - 5060:5060/udp
+      #- ${JT1078_PORT}:${JT1078_PORT}
+      #- ${JT1078_PORT}:${JT1078_PORT}/udp
+      #- 3000:3000
+      - 18080:80
+    volumes:
+      - ${ZLM_RECORD}:/media/record:rw # 录像保存目录
+      - ${WVP_LOG}:${APP_DIR}/logs # 保存wvp日志
+    healthcheck:
+      start_period: 15s
+      test: [ "CMD", "curl", "-sS", "http://localhost:3000" ]
+      timeout: 10s
+      retries: 10
+    depends_on:
+      zlm:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
